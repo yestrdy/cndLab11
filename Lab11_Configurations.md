@@ -88,6 +88,11 @@ interface vlan 20
  ip address 192.168.20.1 255.255.255.0
  no shutdown
 
+! VLAN 30 SVI - SW2-тай OSPF neighbor үүсгэх (shared subnet)
+interface vlan 30
+ ip address 192.168.30.2 255.255.255.0
+ no shutdown
+
 ! IP routing идэвхжүүлэх
 ip routing
 
@@ -95,6 +100,7 @@ ip routing
 router ospf 1
  network 192.168.10.0 0.0.0.255 area 0
  network 192.168.20.0 0.0.0.255 area 0
+ network 192.168.30.0 0.0.0.255 area 0
 
 end
 write memory
