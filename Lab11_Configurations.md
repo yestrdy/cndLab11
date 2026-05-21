@@ -426,6 +426,7 @@ router bgp 65002
  address-family ipv4
   neighbor 10.0.5.1 activate
   neighbor 10.0.7.2 activate
+  neighbor 10.0.7.2 next-hop-self
   network 10.0.5.0 mask 255.255.255.252
   network 10.0.7.0 mask 255.255.255.252
  exit-address-family
@@ -471,6 +472,7 @@ router bgp 65002
  address-family ipv4
   neighbor 10.0.6.1 activate
   neighbor 10.0.8.2 activate
+  neighbor 10.0.8.2 next-hop-self
   network 10.0.6.0 mask 255.255.255.252
   network 10.0.8.0 mask 255.255.255.252
  exit-address-family
@@ -511,7 +513,7 @@ interface ethernet 0/2
 ! IP routing идэвхжүүлэх
 ip routing
 
-! ============ BGP тохиргоо (AS 65002 - iBGP) ============
+! ============ BGP тохиргоо (AS 65002 - iBGP, Route Reflector) ============
 router bgp 65002
  bgp log-neighbor-changes
  neighbor 10.0.7.1 remote-as 65002
@@ -520,8 +522,12 @@ router bgp 65002
  !
  address-family ipv4
   neighbor 10.0.7.1 activate
+  neighbor 10.0.7.1 route-reflector-client
   neighbor 10.0.8.1 activate
+  neighbor 10.0.8.1 route-reflector-client
   neighbor 10.0.9.2 activate
+  neighbor 10.0.9.2 next-hop-self
+  neighbor 10.0.9.2 route-reflector-client
   network 10.0.7.0 mask 255.255.255.252
   network 10.0.8.0 mask 255.255.255.252
   network 10.0.9.0 mask 255.255.255.252
