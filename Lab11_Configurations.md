@@ -30,10 +30,11 @@
 | PC4 LAN | 192.168.50.0/24 | SW4 e0/2 - PC4 |
 | HSRP Left VIP | 10.0.12.1/24 | R1=10.0.12.2, R2=10.0.12.3 |
 | HSRP Right VIP | 10.0.78.1/24 | R4=10.0.78.2, R5=10.0.78.3 |
-| GRE Tunnel 1 | 172.16.1.0/30 | R1 - R3 |
-| GRE Tunnel 2 | 172.16.2.0/30 | R2 - R3 |
+| GRE Tunnel 0 (R1-R5) | 172.16.1.0/30 | R1=172.16.1.1, R5=172.16.1.2 |
+| GRE Tunnel 1 (R2-R4) | 172.16.2.0/30 | R2=172.16.2.1, R4=172.16.2.2 |
 
 ---
+
 
 ## SW1 Configuration
 
@@ -90,6 +91,7 @@ write memory
 ```
 
 ---
+
 
 ## SW2 Configuration
 
@@ -155,6 +157,7 @@ write memory
 
 ---
 
+
 ## SW3 Configuration
 
 **Үүрэг:** R4, R5-аас ирсэн холболтыг хүлээн авч SW4 руу дамжуулах, RIP routing
@@ -185,7 +188,7 @@ interface ethernet 0/2
 ! IP routing идэвхжүүлэх
 ip routing
 
-! RIP routing (Random Routing Protocol)
+! RIP routing
 router rip
  version 2
  network 10.0.7.0
@@ -198,6 +201,7 @@ write memory
 ```
 
 ---
+
 
 ## SW4 Configuration
 
@@ -243,9 +247,10 @@ write memory
 
 ---
 
+
 ## R1 Configuration
 
-**Үүрэг:** HSRP (Active), OSPF, GRE Tunnel + IPsec R3 руу
+**Үүрэг:** HSRP (Active), OSPF, IPsec/GRE VPN Tunnel R5 руу
 
 ```
 enable
@@ -261,7 +266,7 @@ interface FastEthernet 0/1
  ip address 10.0.3.1 255.255.255.252
  no shutdown
 
-! HSRP тохиргоо (SW2 талын виртуал gateway)
+! HSRP тохиргоо (SW2 талын виртуал gateway - Active)
 interface FastEthernet 0/0
  standby 1 ip 10.0.12.1
  standby 1 priority 110
@@ -275,7 +280,7 @@ crypto isakmp policy 10
  group 14
  lifetime 86400
 
-crypto isakmp key LAB11KEY address 10.0.3.2
+crypto isakmp key LAB11KEY address 10.0.6.2
 
 ! IPsec Phase 2
 crypto ipsec transform-set MYSET esp-aes 256 esp-sha256-hmac
@@ -284,11 +289,11 @@ crypto ipsec transform-set MYSET esp-aes 256 esp-sha256-hmac
 crypto ipsec profile GRE_PROFILE
  set transform-set MYSET
 
-! GRE Tunnel R3 руу
+! GRE VPN Tunnel 0 - R5 руу (R1 <-> R5)
 interface Tunnel 0
  ip address 172.16.1.1 255.255.255.252
  tunnel source FastEthernet 0/1
- tunnel destination 10.0.3.2
+ tunnel destination 10.0.6.2
  tunnel protection ipsec profile GRE_PROFILE
  no shutdown
 
@@ -298,15 +303,19 @@ router ospf 1
  network 10.0.3.0 0.0.0.3 area 0
  network 172.16.1.0 0.0.0.3 area 0
 
+! R5 руу хүрэх static route (tunnel destination)
+ip route 10.0.6.2 255.255.255.255 10.0.3.2
+
 end
 write memory
 ```
 
 ---
 
+
 ## R2 Configuration
 
-**Үүрэг:** HSRP (Standby), OSPF, GRE Tunnel + IPsec R3 руу
+**Үүрэг:** HSRP (Standby), OSPF, IPsec/GRE VPN Tunnel R4 руу
 
 ```
 enable
@@ -336,7 +345,7 @@ crypto isakmp policy 10
  group 14
  lifetime 86400
 
-crypto isakmp key LAB11KEY address 10.0.4.2
+crypto isakmp key LAB11KEY address 10.0.5.2
 
 ! IPsec Phase 2
 crypto ipsec transform-set MYSET esp-aes 256 esp-sha256-hmac
@@ -345,11 +354,11 @@ crypto ipsec transform-set MYSET esp-aes 256 esp-sha256-hmac
 crypto ipsec profile GRE_PROFILE
  set transform-set MYSET
 
-! GRE Tunnel R3 руу
+! GRE VPN Tunnel 0 - R4 руу (R2 <-> R4)
 interface Tunnel 0
  ip address 172.16.2.1 255.255.255.252
  tunnel source FastEthernet 0/1
- tunnel destination 10.0.4.2
+ tunnel destination 10.0.5.2
  tunnel protection ipsec profile GRE_PROFILE
  no shutdown
 
@@ -359,15 +368,19 @@ router ospf 1
  network 10.0.4.0 0.0.0.3 area 0
  network 172.16.2.0 0.0.0.3 area 0
 
+! R4 руу хүрэх static route (tunnel destination)
+ip route 10.0.5.2 255.255.255.255 10.0.4.2
+
 end
 write memory
 ```
 
 ---
 
+
 ## R3 Configuration
 
-**Үүрэг:** Төв router - IPsec/GRE tunnel-үүдийг хүлээн авч R1, R2, R4, R5-тай холбогдоно
+**Үүрэг:** Төв router - R1↔R5, R2↔R4 tunnel traffic дамжуулах, OSPF ↔ RIP redistribute
 
 ```
 enable
@@ -395,46 +408,10 @@ interface FastEthernet 2/0
  description To R5
  no shutdown
 
-! IPsec Phase 1
-crypto isakmp policy 10
- encryption aes 256
- hash sha256
- authentication pre-share
- group 14
- lifetime 86400
-
-crypto isakmp key LAB11KEY address 10.0.3.1
-crypto isakmp key LAB11KEY address 10.0.4.1
-
-! IPsec Phase 2
-crypto ipsec transform-set MYSET esp-aes 256 esp-sha256-hmac
- mode transport
-
-crypto ipsec profile GRE_PROFILE
- set transform-set MYSET
-
-! GRE Tunnel 0 - R1 руу
-interface Tunnel 0
- ip address 172.16.1.2 255.255.255.252
- tunnel source FastEthernet 0/0
- tunnel destination 10.0.3.1
- tunnel protection ipsec profile GRE_PROFILE
- no shutdown
-
-! GRE Tunnel 1 - R2 руу
-interface Tunnel 1
- ip address 172.16.2.2 255.255.255.252
- tunnel source FastEthernet 0/1
- tunnel destination 10.0.4.1
- tunnel protection ipsec profile GRE_PROFILE
- no shutdown
-
-! OSPF (Зүүн тал) + Static/Redistribute (Баруун тал)
+! OSPF (Зүүн тал) + Redistribute (Баруун тал)
 router ospf 1
  network 10.0.3.0 0.0.0.3 area 0
  network 10.0.4.0 0.0.0.3 area 0
- network 172.16.1.0 0.0.0.3 area 0
- network 172.16.2.0 0.0.0.3 area 0
  redistribute rip subnets
 
 ! RIP (Баруун тал руу)
@@ -451,9 +428,10 @@ write memory
 
 ---
 
+
 ## R4 Configuration
 
-**Үүрэг:** HSRP Active (Баруун тал), R3-тай холбогдох, RIP
+**Үүрэг:** HSRP Active (Баруун тал), IPsec/GRE VPN Tunnel R2 руу, RIP
 
 ```
 enable
@@ -477,12 +455,41 @@ interface FastEthernet 0/1
  standby 2 priority 110
  standby 2 preempt
 
+! IPsec Phase 1
+crypto isakmp policy 10
+ encryption aes 256
+ hash sha256
+ authentication pre-share
+ group 14
+ lifetime 86400
+
+crypto isakmp key LAB11KEY address 10.0.4.1
+
+! IPsec Phase 2
+crypto ipsec transform-set MYSET esp-aes 256 esp-sha256-hmac
+ mode transport
+
+crypto ipsec profile GRE_PROFILE
+ set transform-set MYSET
+
+! GRE VPN Tunnel 0 - R2 руу (R4 <-> R2)
+interface Tunnel 0
+ ip address 172.16.2.2 255.255.255.252
+ tunnel source FastEthernet 0/0
+ tunnel destination 10.0.4.1
+ tunnel protection ipsec profile GRE_PROFILE
+ no shutdown
+
 ! RIP routing
 router rip
  version 2
  network 10.0.5.0
  network 10.0.7.0
+ network 172.16.2.0
  no auto-summary
+
+! R2 руу хүрэх static route (tunnel destination)
+ip route 10.0.4.1 255.255.255.255 10.0.5.1
 
 end
 write memory
@@ -490,9 +497,10 @@ write memory
 
 ---
 
+
 ## R5 Configuration
 
-**Үүрэг:** HSRP Standby (Баруун тал), R3-тай холбогдох, RIP
+**Үүрэг:** HSRP Standby (Баруун тал), IPsec/GRE VPN Tunnel R1 руу, RIP
 
 ```
 enable
@@ -516,18 +524,48 @@ interface FastEthernet 0/1
  standby 2 priority 90
  standby 2 preempt
 
+! IPsec Phase 1
+crypto isakmp policy 10
+ encryption aes 256
+ hash sha256
+ authentication pre-share
+ group 14
+ lifetime 86400
+
+crypto isakmp key LAB11KEY address 10.0.3.1
+
+! IPsec Phase 2
+crypto ipsec transform-set MYSET esp-aes 256 esp-sha256-hmac
+ mode transport
+
+crypto ipsec profile GRE_PROFILE
+ set transform-set MYSET
+
+! GRE VPN Tunnel 0 - R1 руу (R5 <-> R1)
+interface Tunnel 0
+ ip address 172.16.1.2 255.255.255.252
+ tunnel source FastEthernet 0/0
+ tunnel destination 10.0.3.1
+ tunnel protection ipsec profile GRE_PROFILE
+ no shutdown
+
 ! RIP routing
 router rip
  version 2
  network 10.0.6.0
  network 10.0.8.0
+ network 172.16.1.0
  no auto-summary
+
+! R1 руу хүрэх static route (tunnel destination)
+ip route 10.0.3.1 255.255.255.255 10.0.6.1
 
 end
 write memory
 ```
 
 ---
+
 
 ## VPCS / PC Configurations
 
@@ -558,22 +596,45 @@ ip 192.168.50.10 255.255.255.0 192.168.50.1
 
 ---
 
-## Хийгдэх ажлуудын товч тайлбар
 
-| # | Бүс | Ажил | Тайлбар |
-|---|------|------|---------|
-| 1 | OSPF (Ногоон зүүн) | VLAN үүсгэх | SW1 дээр VLAN 10, 20 үүсгэж PC-үүдийг access port-д холбох |
-| 2 | OSPF (Ногоон зүүн) | Trunk тохируулах | SW1-SW2 хооронд trunk link (dot1q) |
-| 3 | OSPF (Ногоон зүүн) | OSPF routing | SW1, SW2, R1, R2 дээр OSPF area 0 |
-| 4 | HSRP (Шар зүүн) | HSRP тохируулах | R1 = Active (priority 110), R2 = Standby (priority 90), VIP = 10.0.12.1 |
-| 5 | IPsec/GRE (Ягаан) | GRE Tunnel | R1-R3, R2-R3 хооронд GRE tunnel үүсгэх |
-| 6 | IPsec/GRE (Ягаан) | IPsec шифрлэлт | GRE tunnel дээр IPsec transport mode, AES-256, SHA-256, PSK |
-| 7 | HSRP (Шар баруун) | HSRP тохируулах | R4 = Active (priority 110), R5 = Standby (priority 90), VIP = 10.0.78.1 |
-| 8 | RIP (Ногоон баруун) | RIP v2 routing | SW3, SW4, R4, R5 дээр RIP version 2 |
-| 9 | Redistribute | OSPF <-> RIP | R3 дээр OSPF болон RIP хоорондын redistribute хийх |
-| 10 | End-to-End | Connectivity test | VLAN10 PC -> PC3, PC4 хүртэл ping шалгах |
+## VPN Tunnel Redundancy тайлбар
+
+### Зорилго
+Ямар ч нэг router унахад PC3 (192.168.40.10) → Server (192.168.30.10) хүртэл ping ажиллах ёстой.
+
+### Tunnel схем
+
+| Tunnel | Endpoint A | Endpoint B | Tunnel IP A | Tunnel IP B | Зорилго |
+|--------|-----------|-----------|-------------|-------------|---------|
+| Tunnel 0 (R1-R5) | R1 (src: f0/1, dst: 10.0.6.2) | R5 (src: f0/0, dst: 10.0.3.1) | 172.16.1.1/30 | 172.16.1.2/30 | Primary VPN path |
+| Tunnel 0 (R2-R4) | R2 (src: f0/1, dst: 10.0.5.2) | R4 (src: f0/0, dst: 10.0.4.1) | 172.16.2.1/30 | 172.16.2.2/30 | Backup VPN path |
+
+### Traffic Flow (Хэвийн үед)
+```
+PC3 -> SW4 -> SW3 -> R4 (HSRP Active) -> Tunnel0 -> R3 -> R2 -> ... 
+                                                          эсвэл
+PC3 -> SW4 -> SW3 -> R5 (HSRP Standby) -> Tunnel0 -> R3 -> R1 -> ...
+```
+
+### Redundancy Scenarios
+
+| Scenario | Path |
+|----------|------|
+| Бүх router ажиллаж байгаа | PC3 → SW4 → SW3 → R4(Active) → Tunnel(R4↔R2) → R2 → SW2 → Server |
+| R4 унасан | HSRP failover → R5(Active) → Tunnel(R5↔R1) → R1 → SW2 → Server |
+| R1 унасан | HSRP failover → R2(Active) → Tunnel(R2↔R4) → R4 → SW3 → SW4 ... (reverse) |
+| R5 унасан | R4(Active) → Tunnel(R4↔R2) → R2 → SW2 → Server (R5 standby-г алдсан ч R4 ажиллаж байна) |
+| R3 унасан | Tunnel-үүд R3-р дамждаг тул R3 унавал tunnel down болно. Гэхдээ R3 = single point |
+
+### HSRP Summary
+
+| Бүс | Group | VIP | Active | Standby | Priority |
+|-----|-------|-----|--------|---------|----------|
+| Зүүн (R1, R2) | 1 | 10.0.12.1 | R1 (110) | R2 (90) | R1 preempt |
+| Баруун (R4, R5) | 2 | 10.0.78.1 | R4 (110) | R5 (90) | R4 preempt |
 
 ---
+
 
 ## Verification Commands (Шалгах командууд)
 
@@ -585,7 +646,7 @@ show ip route ospf
 ! HSRP шалгах
 show standby brief
 
-! GRE Tunnel шалгах
+! GRE VPN Tunnel шалгах
 show interface tunnel 0
 show crypto ipsec sa
 show crypto isakmp sa
@@ -594,7 +655,11 @@ show crypto isakmp sa
 show ip route rip
 show ip rip database
 
-! Connectivity
-ping 192.168.40.10 source 192.168.10.10
-traceroute 192.168.50.10
+! Connectivity (PC3 -> Server)
+ping 192.168.30.10 source 192.168.40.10
+traceroute 192.168.30.10 source 192.168.40.10
+
+! Tunnel verify
+show crypto session
+show ip route | include Tunnel
 ```
